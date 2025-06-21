@@ -1,3 +1,8 @@
+---
+title: 程序员效率神器！Claude Code + Obsidian 实现技术笔记自动化
+date: 2025-06-05 20:20:56 -0400
+---
+
 # 🚀 程序员效率神器！Claude Code + Obsidian 实现技术笔记自动化
 
 ## 标题
