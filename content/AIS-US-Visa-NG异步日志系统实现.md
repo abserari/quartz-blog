@@ -1,0 +1,174 @@
+## 概述
+
+在 AIS-US-Visa-NG 项目中实现了一个高性能的异步日志系统，通过集成多个开源库实现了日志的异步写入、批量处理和云端上传，显著降低了日志 I/O 对主业务逻辑的影响。
+
+## 技术栈
+
+### 核心库
+- **zap** (v1.27.0) - Uber 开源的高性能结构化日志库
+- **law** (v0.1.18) - 轻量级异步写入库，提供批量写入和自动刷新功能
+- **axiom-go** (v0.23.3) - Axiom 云日志服务的 Go SDK
+- **lumberjack** (v2.2.1) - 日志文件自动轮转库
+
+## 实现架构
+
+### 1. 多层日志输出架构
+
+```
+应用日志 
+    ↓
+zap.Logger (统一接口)
+    ↓
+zapcore.Tee (多核心聚合)
+    ├── FileCore (文件输出)
+    │   └── BufferedWriteSyncer (256KB缓冲)
+    ├── LAWCore (控制台输出) 
+    │   └── law.WriteAsyncer (异步批量)
+    └── AxiomCore (云端输出)
+        └── law.WriteAsyncer (异步批量)
+```
+
+### 2. 异步写入实现
+
+#### 控制台异步输出
+```go
+func createLAMCoreIfEnabled(level zapcore.Level) zapcore.Core {
+    // 使用 law 库创建异步 writer
+    aw := law.NewWriteAsyncer(os.Stdout, nil)
+    
+    encoderCfg := createColoredEncoderConfig()
+    zapAsyncWriter := zapcore.AddSync(aw)
+    zapCore := zapcore.NewCore(zapcore.NewConsoleEncoder(encoderCfg), zapAsyncWriter, level)
+    return zapCore
+}
+```
+
+#### Axiom 云日志异步上传
+```go
+type WriteSyncer struct {
+    client      *axiom.Client
+    datasetName string
+    asyncWriter *law.WriteAsyncer
+}
+
+func (ws *WriteSyncer) Write(p []byte) (n int, err error) {
+    // 直接写入异步 writer，它会自动批量处理
+    return ws.asyncWriter.Write(p)
+}
+```
+
+### 3. 批量处理优化
+
+#### 文件写入缓冲
+```go
+bufferedWS := &zapcore.BufferedWriteSyncer{
+    WS:            ws,
+    Size:          256 * 1024,      // 256KB 缓冲区
+    FlushInterval: 30 * 1000000000, // 30 秒刷新间隔
+}
+```
+
+#### Axiom 批量上传
+```go
+// axiomWriter 实现批量数据上传
+func (aw *axiomWriter) Write(p []byte) (int, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), time.Second*15)
+    defer cancel()
+    
+    // 使用零分配的 reader
+    reader := &byteReader{data: p}
+    
+    // 压缩并批量上传
+    r, err := axiom.ZstdEncoder()(reader)
+    res, err := aw.ws.client.Ingest(ctx, aw.ws.datasetName, r, axiom.NDJSON, axiom.Zstd, aw.ws.ingestOptions...)
+    
+    return len(p), nil
+}
+```
+
+## 性能优化
+
+### 1. 零分配设计
+- 使用自定义的 `byteReader` 避免数据复制
+- 直接使用原始字节数组，减少内存分配
+
+### 2. 批量处理
+- law 库自动将多条日志聚合成批次
+- 减少系统调用次数和网络请求
+
+### 3. 异步非阻塞
+- 日志写入不会阻塞主业务逻辑
+- 使用独立的 goroutine 处理 I/O 操作
+
+### 4. 压缩传输
+- Axiom 上传使用 Zstd 压缩
+- 减少网络带宽占用
+
+## 资源管理
+
+### 优雅关闭
+```go
+func Shutdown() {
+    // 同步所有日志
+    if logger != nil {
+        logger.Sync()
+    }
+    
+    // 关闭所有可关闭的资源
+    for _, closer := range closeables {
+        if err := closer.Close(); err != nil {
+            log.Printf("关闭日志资源失败: %v", err)
+        }
+    }
+}
+```
+
+### 自动清理
+- law 库在 Stop() 时会自动刷新所有缓冲数据
+- 确保程序退出时不丢失日志
+
+## 预期效果
+
+1. **降低延迟**：日志写入从同步变为异步，主线程不再等待 I/O
+2. **提高吞吐量**：批量写入减少系统调用，提升整体性能
+3. **减少资源占用**：缓冲和批量处理降低 CPU 和 I/O 压力
+4. **可靠性保证**：优雅关闭机制确保日志不丢失
+
+## 使用示例
+
+```go
+// 初始化日志系统
+logger.Init(cfg.Log)
+defer logger.Shutdown()
+
+// 正常使用日志
+logger.Info("服务启动", "port", 8080)
+logger.Error("请求失败", "error", err, "url", url)
+```
+
+## 配置示例
+
+```yaml
+log:
+  level: info
+  file_path: ./logs/app.log
+  max_size: 100        # MB
+  max_backups: 5
+  max_age: 30          # days
+  compress: true
+  axiom:
+    enabled: true
+    token: "your-axiom-token"
+    dataset: "your-data-set"
+    org_id: "your-org-id"
+```
+
+## 总结
+
+通过集成 law 异步写入库和优化日志架构，成功将日志系统从同步阻塞模式改造为高性能的异步非阻塞模式。这种设计特别适合 AIS-US-Visa-NG 这种对延迟敏感的高并发系统，确保日志记录不会成为系统性能瓶颈。
+
+## 参考资料
+
+- [law - Lightweight Asynchronous Writer](https://github.com/shengyanli1982/law)
+- [zap - Blazing fast, structured logging](https://github.com/uber-go/zap)
+- [Axiom - Cloud-native log management](https://axiom.co/)
