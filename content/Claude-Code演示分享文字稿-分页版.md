@@ -5,7 +5,7 @@
 ## 一、开场介绍
 
 ### 自我介绍
-大家好，我是 xxx ，目前在参与项目的 Go 语言重构.
+大家好，我是 ，目前在参与项目的 Go 语言重构.
 
 今天分享的是 Claude Code 在項目中的實踐經驗。
 
@@ -33,7 +33,23 @@ Claude Code 是 Anthropic 推出的官方命令行工具，它不是简单的代
 ## 二、核心功能演示（10分钟）
 
 ### 1. 基础功能展示
+- 開通訂閲網址和方式展示:
+	- wildcard 開卡年費 https://bewildcard.com/
+	- ![[Pasted image 20250624181205.png]]
+	- 充值方式:
+- ![[Pasted image 20250624180930.png]]
+---
+## 使用量展示
 
+### 工具:
+```bash
+npm install -g ccusage@latest
+``` 
+### 歷史統計
+![[image_2025-06-22_12-39-14.png]]
+
+### live 實時統計
+![[image_2025-06-22_12-40-56.png]]
 ---
 
 #### 安装和启动
@@ -145,7 +161,7 @@ claude mcp add taskmaster-ai -s user --env GOOGLE_API_KEY=xxx -- npx -y--package
 > 根据刚才的所有命令,做一个技术笔记总结到 obsidian 中.
 ```
 
-[[AIS-US-Visa-NG异步日志系统实现]]
+[[异步日志系统实现]]
 
 ---
 
@@ -187,7 +203,7 @@ claude mcp add taskmaster-ai -s user --env GOOGLE_API_KEY=xxx -- npx -y--package
 ```
 
 ---
-
+### 3.1 think deeper
 [[Claude扩展思考模式]]
 
 ---
